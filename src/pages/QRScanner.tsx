@@ -17,33 +17,84 @@ export default function QRScanner() {
   const [notFound, setNotFound] = useState(false);
   const [scannedId, setScannedId] = useState('');
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    return () => { if (scannerRef.current) scannerRef.current.stop().catch(() => {}); };
+    return () => {
+      if (scannerRef.current) {
+        scannerRef.current.stop().catch(() => {});
+      }
+    };
   }, []);
 
   const startScanner = async () => {
-    setError(''); setResult(null); setNotFound(false); setScannedId('');
+    setError('');
+    setResult(null);
+    setNotFound(false);
+    setScannedId('');
+
     try {
+      // Wait for DOM to update
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      if (!containerRef.current) {
+        setError('Scanner container not found');
+        return;
+      }
+
       const scanner = new Html5Qrcode('qr-scanner-container');
       scannerRef.current = scanner;
-      await scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 250, height: 250 } }, onScanSuccess, () => {});
+
+      await scanner.start(
+        { facingMode: 'environment' },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0
+        },
+        (decodedText) => onScanSuccess(decodedText),
+        () => {} // Ignore scan failures
+      );
+
       setScanning(true);
-    } catch { setError('Unable to access camera. Please check permissions.'); setScanning(false); }
+    } catch (err) {
+      console.error('Camera error:', err);
+      setError('Unable to access camera. Please ensure you have granted camera permissions and are using HTTPS.');
+      setScanning(false);
+    }
   };
 
   const stopScanner = async () => {
-    if (scannerRef.current) try { await scannerRef.current.stop(); } catch {}
+    try {
+      if (scannerRef.current) {
+        await scannerRef.current.stop();
+      }
+    } catch (err) {
+      console.error('Stop error:', err);
+    }
     setScanning(false);
   };
 
   const onScanSuccess = async (decodedText: string) => {
     await stopScanner();
     setScannedId(decodedText);
-    try { const pet = await getPetByPetId(decodedText); if (pet) { setResult(pet); return; } } catch {}
-    const mockPet = mockPets.find(p => p.petId === decodedText);
-    if (mockPet) setResult(mockPet);
-    else setNotFound(true);
+
+    try {
+      const pet = await getPetByPetId(decodedText);
+      if (pet) {
+        setResult(pet);
+        return;
+      }
+    } catch (err) {
+      console.error('Firebase lookup error:', err);
+    }
+
+    const mockPet = mockPets.find((p: Pet) => p.petId === decodedText);
+    if (mockPet) {
+      setResult(mockPet);
+    } else {
+      setNotFound(true);
+    }
   };
 
   const handleRegisterTag = () => navigate(`/register?petId=${scannedId}`);
@@ -58,7 +109,17 @@ export default function QRScanner() {
 
       <GlassCard className="p-6" hover={false}>
         <div className="space-y-4">
-          <div id="qr-scanner-container" className="scanner-box">
+          <div
+            id="qr-scanner-container"
+            ref={containerRef}
+            className="scanner-box"
+            style={{
+              minHeight: '300px',
+              background: scanning ? 'black' : 'var(--bg-card)',
+              borderRadius: 'var(--radius-md)',
+              overflow: 'hidden'
+            }}
+          >
             {!scanning && (
               <div className="scanner-placeholder">
                 <Camera />
@@ -68,21 +129,38 @@ export default function QRScanner() {
           </div>
           <div className="flex justify-center">
             {!scanning ? (
-              <Button onClick={startScanner} icon={<Camera size={16} />} size="lg">Start Scanning</Button>
+              <Button onClick={startScanner} icon={<Camera size={16} />} size="lg">
+                Start Scanning
+              </Button>
             ) : (
-              <Button onClick={stopScanner} variant="danger" icon={<CameraOff size={16} />}>Stop Scanner</Button>
+              <Button onClick={stopScanner} variant="danger" icon={<CameraOff size={16} />}>
+                Stop Scanner
+              </Button>
             )}
           </div>
         </div>
       </GlassCard>
 
       <AnimatePresence>
-        {error && <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="alert alert-error"><AlertCircle />{error}</motion.div>}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="alert alert-error"
+          >
+            <AlertCircle /> {error}
+          </motion.div>
+        )}
       </AnimatePresence>
 
       <AnimatePresence>
         {result && (
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+          >
             <GlassCard className="found-pet-card" onClick={() => navigate(`/pets/${result.id}`)}>
               <div className="found-pet-inner">
                 <div className="found-icon green"><CheckCircle /></div>
@@ -100,7 +178,11 @@ export default function QRScanner() {
 
       <AnimatePresence>
         {notFound && (
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+          >
             <GlassCard className="p-6" hover={false}>
               <div className="found-pet-inner mb-4">
                 <div className="found-icon amber"><AlertCircle /></div>
@@ -110,7 +192,9 @@ export default function QRScanner() {
                   <p className="found-detail">This tag has not been registered yet.</p>
                 </div>
               </div>
-              <Button onClick={handleRegisterTag} className="btn-block" icon={<QrCode size={16} />}>Register This Tag</Button>
+              <Button onClick={handleRegisterTag} className="btn-block" icon={<QrCode size={16} />}>
+                Register This Tag
+              </Button>
             </GlassCard>
           </motion.div>
         )}
