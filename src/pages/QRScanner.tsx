@@ -16,6 +16,7 @@ export default function QRScanner() {
   const [notFound, setNotFound] = useState(false);
   const [scannedId, setScannedId] = useState('');
   const [hasCamera, setHasCamera] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -36,38 +37,56 @@ export default function QRScanner() {
       setResult(null);
       setNotFound(false);
       setScannedId('');
+      setCameraReady(false);
 
+      console.log('Requesting camera access...');
+      
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+        video: { 
+          facingMode: 'environment', 
+          width: { ideal: 1280 }, 
+          height: { ideal: 720 } 
+        }
       });
       
       streamRef.current = stream;
+      console.log('Camera stream obtained:', stream);
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
-        setScanning(true);
         
-        // Start scanning for QR codes
-        startQRScanning();
-        
-        // For demo: simulate QR scan after 3 seconds if camera is working
-        // In production, integrate with a QR detection library
-        setTimeout(() => {
-          if (scanning) {
-            // Demo: automatically find a pet after camera starts
-            const demoPet = mockPets[0];
-            if (demoPet) {
-              handleScanSuccess(demoPet.petId);
-            }
+        // Multiple event handlers for better mobile support
+        const onVideoReady = async () => {
+          console.log('Video metadata loaded');
+          try {
+            await videoRef.current?.play();
+            console.log('Video playing');
+            setScanning(true);
+            setCameraReady(true);
+            
+            // For demo: simulate QR scan after 3 seconds
+            setTimeout(() => {
+              console.log('Demo scan triggered');
+              const demoPet = mockPets[0];
+              if (demoPet) {
+                handleScanSuccess(demoPet.petId);
+              }
+            }, 3000);
+          } catch (playError) {
+            console.error('Play error:', playError);
+            setError('Failed to play video. Please try again.');
           }
-        }, 3000);
+        };
+        
+        videoRef.current.onloadedmetadata = onVideoReady;
+        videoRef.current.onloadeddata = onVideoReady;
       }
     } catch (err) {
       console.error('Camera error:', err);
       const message = err instanceof Error ? err.message : 'Unknown error';
-      setError(`Camera error: ${message}. Please grant camera permissions.`);
+      setError(`Camera error: ${message}. Please grant camera permissions and ensure you're using HTTPS.`);
       setScanning(false);
+      setCameraReady(false);
     }
   };
 
@@ -144,18 +163,37 @@ export default function QRScanner() {
 
       <GlassCard className="p-6" hover={false}>
         <div className="space-y-4">
-          <div className="scanner-box" style={{ position: 'relative', minHeight: '400px', background: 'black', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-            {scanning ? (
-              <>
-                <video
-                  ref={videoRef}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  playsInline
-                  autoPlay
-                  muted
-                />
-                <canvas ref={canvasRef} style={{ display: 'none' }} />
-              </>
+          <div 
+            className="scanner-box" 
+            style={{ 
+              position: 'relative', 
+              minHeight: '400px', 
+              background: 'black', 
+              borderRadius: 'var(--radius-lg)', 
+              overflow: 'hidden' 
+            }}
+          >
+            {scanning && !cameraReady ? (
+              <div className="scanner-placeholder">
+                <div className="scanner-loading">Loading camera...</div>
+              </div>
+            ) : scanning && cameraReady ? (
+              <video
+                ref={videoRef}
+                style={{ 
+                  width: '100%', 
+                  height: '100%', 
+                  objectFit: 'cover',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0
+                }}
+                playsInline
+                autoPlay
+                muted
+                disablePictureInPicture
+                disableRemotePlayback
+              />
             ) : (
               <div className="scanner-placeholder">
                 <Camera />
